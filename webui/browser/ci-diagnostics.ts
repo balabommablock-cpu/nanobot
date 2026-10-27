@@ -15,6 +15,13 @@ export async function installCiDiagnostics(page: Page) {
       records.push({ at: performance.now(), ...record });
       if (records.length > 2500) records.shift();
     };
+    const preventDefault = Event.prototype.preventDefault;
+    Event.prototype.preventDefault = function () {
+      if (this instanceof KeyboardEvent && this.key === "Escape") {
+        window.__ciDiagnostic?.({ source: "native", type: "escape-prevent-default", stack: new Error().stack });
+      }
+      return preventDefault.call(this);
+    };
     const element = (node: Element | null) => node ? {
       tag: node.tagName, id: node.id, className: node.getAttribute("class"),
       testId: node.getAttribute("data-testid"), role: node.getAttribute("role"),

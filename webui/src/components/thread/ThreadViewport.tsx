@@ -903,7 +903,10 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
 
     const onScroll = (allowHistoryLoad = true) => {
       setAtHistoryTop(el.scrollTop <= 1);
-      if (el.scrollTop > 1) historySpringRef.current?.leaveBoundary();
+      if (el.scrollTop > 1) {
+        (window as Window & { __ciDiagnostic?: (record: Record<string, unknown>) => void }).__ciDiagnostic?.({ source: "history", type: "leave-boundary", scrollTop: el.scrollTop, input: historyInputRef.current, gesture: historyTouchRef.current ? { ...historyTouchRef.current } : null, distance: historyDistanceRef.current });
+        historySpringRef.current?.leaveBoundary();
+      }
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const near = distance < NEAR_BOTTOM_PX;
       // A detached history page's bottom is not the live tail.
@@ -1047,7 +1050,9 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
       diagnostic("touchend");
       const pulling = historyTouchRef.current?.pulling;
       historyTouchRef.current = null;
-      if (historySpringRef.current?.endTouch() && pulling && canLoadAtTop()) loadEarlierMessages();
+      const triggered = historySpringRef.current?.endTouch();
+      diagnostic("touchend-result", { pulling, triggered, canLoad: canLoadAtTop() });
+      if (triggered && pulling && canLoadAtTop()) loadEarlierMessages();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
