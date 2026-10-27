@@ -127,7 +127,8 @@ def select_scope(event: str, base: str, head: str, *, cwd: Path | None = None) -
     """Use merge-base diff for PRs, endpoint diff for pushes, full for dispatch."""
     if event == "workflow_dispatch":
         result = classify_paths([])
-        result["reason"] = "manual dispatch; full validation"
+        result["outputs"] = {job: job == "webui_required" for job in JOBS}
+        result["reason"] = "diagnostic branch: WebUI jobs only"
         return result
     if event not in {"pull_request", "push"}:
         raise ValueError(f"unsupported event: {event}")

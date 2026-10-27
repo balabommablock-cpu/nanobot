@@ -1,4 +1,11 @@
 import { expect, test, type Locator } from "@playwright/test";
+import { installCiDiagnostics, saveCiDiagnostics } from "./ci-diagnostics";
+
+test.use({ trace: "retain-on-failure" });
+test.beforeEach(async ({ page }) => { await installCiDiagnostics(page); });
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) await saveCiDiagnostics(page, info, "dock");
+});
 
 async function settledMotion(target: Locator) {
   await target.evaluate(() => document.fonts.ready);

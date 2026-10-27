@@ -1,4 +1,11 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { installCiDiagnostics, saveCiDiagnostics } from "./ci-diagnostics";
+
+test.use({ trace: "retain-on-failure" });
+test.beforeEach(async ({ page }) => { await installCiDiagnostics(page); });
+test.afterEach(async ({ page }, info) => {
+  if (info.status !== info.expectedStatus) await saveCiDiagnostics(page, info, "history");
+});
 
 function historyPage(start: number, count = 12, more = start > 0) {
   return { schemaVersion: 3, projection: "events", events: Array.from({ length: Math.min(count, 52 - start) }, (_, offset) => [
@@ -341,6 +348,7 @@ test("archived task results stay with the retained boundary when earlier message
 test("touch reveals a static partial ready header, arms only on release, and retains a stable full loading header", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL });
   const page = await context.newPage();
+  await installCiDiagnostics(page);
   const history = await installHistory(page);
   try {
     const { body, header } = await openSettledHistory(page);
@@ -414,6 +422,9 @@ test("touch reveals a static partial ready header, arms only on release, and ret
     history.complete();
     await page.waitForTimeout(100);
     await expect(page.locator('.thread-history-status[data-state="loading"]')).toHaveCount(0);
+  } catch (error) {
+    await saveCiDiagnostics(page, test.info(), "touch-history");
+    throw error;
   } finally { await context.close(); }
 });
 

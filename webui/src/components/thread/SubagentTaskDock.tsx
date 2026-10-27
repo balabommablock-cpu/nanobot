@@ -40,8 +40,13 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const { open, setOpen, tasks } = useSubagentActivity(allTasks, inputKey, context.detailOpen || focused || hovered || dragHeight !== null);
   const running = allTasks.filter(isActiveSubagentTask).length;
+  const diagnostic = (type: string, extra: Record<string, unknown> = {}) => {
+    const emit = (window as Window & { __ciDiagnostic?: (record: Record<string, unknown>) => void }).__ciDiagnostic;
+    emit?.({ source: "dock", type, open, running, treeMounted, dragHeight, detailOpen: context.detailOpen, focused, hovered, suppressClick: suppressClick.current, gesture: gesture.current ? { ...gesture.current } : null, ...extra });
+  };
   const composerInput = () => root.current?.closest(".thread-composer-stack")?.querySelector("textarea");
   const changeOpen = (next: boolean, returnFocus = false, preserveFeedback = false) => {
+    diagnostic("changeOpen", { next, returnFocus, preserveFeedback });
     if (next === open) return;
     if (next) setTreeMounted(true);
     setOpen(next, { preserveFeedback });
@@ -49,6 +54,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
   };
   const finishExit = useCallback(() => setTreeMounted(false), []);
   const cancelGesture = () => {
+    diagnostic("cancelGesture");
     const start = gesture.current;
     if (!start) return;
     gesture.current = null;
@@ -106,8 +112,10 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
   }, [open, dragHeight, treeMounted, finishExit]);
 
   useEffect(() => {
+    diagnostic("listener-effect");
     if ((!open && dragHeight === null) || context.detailOpen) return;
     const outside = (event: PointerEvent) => {
+      diagnostic("outside", { target: event.target instanceof Element ? event.target.outerHTML.slice(0, 260) : null });
       const target = event.target;
       if (gesture.current || ownedPointerDown.current === event || !(target instanceof Element) || root.current?.closest(".thread-composer-stack")?.contains(target)) return;
       // Dismissing on blank space must not strand focus after the last task.
@@ -117,6 +125,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
       changeOpen(false, returnFocus);
     };
     const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") diagnostic("escape", { prevented: event.defaultPrevented, composing: event.isComposing });
       if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
       event.preventDefault();
       if (gesture.current) cancelGesture();
@@ -124,7 +133,9 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
     };
     document.addEventListener("pointerdown", outside);
     window.addEventListener("keydown", escape);
+    diagnostic("listener-attached");
     return () => {
+      diagnostic("listener-removed");
       document.removeEventListener("pointerdown", outside);
       window.removeEventListener("keydown", escape);
     };
@@ -148,6 +159,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
           onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
           onPointerEnter={event => { if (event.pointerType === "mouse") setHovered(true); }} onPointerLeave={() => setHovered(false)}
           onPointerDown={event => {
+            diagnostic("pointerdown", { x: event.clientX, y: event.clientY, button: event.button, primary: event.isPrimary, pointerType: event.pointerType });
             if (event.button !== 0 || !event.isPrimary || gesture.current) return;
             event.currentTarget.setPointerCapture(event.pointerId);
             const height = panel.current?.getBoundingClientRect().height ?? 0;
@@ -157,6 +169,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
             setDragHeight(height);
           }}
           onPointerMove={event => {
+            if (gesture.current) diagnostic("pointermove", { x: event.clientX, y: event.clientY, pointerId: event.pointerId });
             const start = gesture.current;
             if (!start || start.pointerId !== event.pointerId) return;
             const dy = event.clientY - start.y;
@@ -169,6 +182,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
             setDragHeight(height);
           }}
           onPointerUp={event => {
+            diagnostic("pointerup", { x: event.clientX, y: event.clientY, pointerId: event.pointerId });
             const start = gesture.current;
             if (!start || start.pointerId !== event.pointerId) return;
             gesture.current = null;
@@ -183,6 +197,7 @@ function TaskDock({ allTasks, inputKey }: { allTasks: ObservedSubagentTask[]; in
           onPointerCancel={event => { if (gesture.current?.pointerId === event.pointerId) cancelGesture(); }}
           onLostPointerCapture={event => { if (gesture.current?.pointerId === event.pointerId) cancelGesture(); }}
           onClick={event => {
+            diagnostic("click", { detail: event.detail });
             if (suppressClick.current && event.detail !== 0) { suppressClick.current = false; return; }
             changeOpen(!open, open);
           }}
