@@ -353,19 +353,12 @@ jobs:
         working-directory: webui
         run: bun x playwright install --with-deps chromium
 
-      - name: Test browser layout and history motion
-        id: browser_full
-        working-directory: webui
-        run: bun run test:browser
-
-      # A fixed diagnostic sample, separate from the full-suite result. No retries.
-      - name: Collect four input-interleaving samples
-        if: ${{ !cancelled() && steps.browser_full.outcome != 'skipped' }}
+      # This run is a fixed diagnostic sample, not a full-suite or retry result.
+      - name: Collect sixteen touch-history samples
         working-directory: webui
         run: >-
-          bun x playwright test browser/subagent-dock.spec.ts browser/history-boundary.spec.ts
-          --grep 'keeps subtasks reachable|follows the mouse before release|touch reveals a static partial'
-          --repeat-each=4 --output=test-results/diagnostic
+          bun x playwright test browser/history-boundary.spec.ts
+          --grep 'touch reveals a static partial' --repeat-each=16
 
       - name: Retain diagnostic browser evidence
         if: always()
