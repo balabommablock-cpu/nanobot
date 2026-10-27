@@ -357,6 +357,15 @@ jobs:
         working-directory: webui
         run: bun run test:browser
 
+      - name: Retain diagnostic browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nan374-browser-diagnostics
+          path: webui/test-results/browser/
+          if-no-files-found: ignore
+          retention-days: 7
+
   webui:
     needs: [changes, webui_checks, webui_browser]
     if: always() && needs.changes.outputs.webui_required == 'true'

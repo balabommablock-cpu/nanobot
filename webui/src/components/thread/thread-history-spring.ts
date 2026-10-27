@@ -26,6 +26,12 @@ export class ThreadHistorySpring {
   private travel = 0;
   private wheelLatched = false;
 
+  private diagnostic(type: string, extra: Record<string, unknown> = {}): void {
+    if (typeof window === "undefined") return;
+    const emit = (window as Window & { __ciDiagnostic?: (record: Record<string, unknown>) => void }).__ciDiagnostic;
+    emit?.({ source: "spring", type, value: this.value.get(), dragging: this.dragging, phase: this.phase, destination: this.destination, generation: this.animationGeneration, hasAnimation: this.animation !== null, ...extra });
+  }
+
   constructor(options: HistorySpringOptions) {
     this.options = options;
     const preference = typeof window !== "undefined" && typeof window.matchMedia === "function"
@@ -56,31 +62,38 @@ export class ThreadHistorySpring {
   }
 
   startTouch(): void {
+    this.diagnostic("start-before");
     this.stopAnimation();
     const visible = this.boundedValue();
     this.value.set(visible);
     this.dragging = true;
     if (this.phase !== "held") this.setPhase("feedback");
     this.travel = -RESISTANCE_LENGTH_PX * Math.log(Math.max(Number.EPSILON, 1 - visible / HISTORY_PULL_LIMIT_PX));
+    this.diagnostic("start-after");
   }
 
   moveTouch(travel: number): void {
+    this.diagnostic("move-before", { travel });
     if (!this.dragging) return;
     this.travel = Math.max(0, this.travel + travel);
     this.value.set(HISTORY_PULL_LIMIT_PX * (1 - Math.exp(-this.travel / RESISTANCE_LENGTH_PX)));
+    this.diagnostic("move-after", { travel });
   }
 
   endTouch(cancelled = false): boolean {
+    this.diagnostic("end-before", { cancelled });
     if (!this.dragging) return false;
     const triggered = !cancelled && this.boundedValue() >= HISTORY_PULL_TRIGGER_PX;
     this.dragging = false;
     this.travel = 0;
     this.animateTo(this.restPosition());
+    this.diagnostic("end-after", { cancelled, triggered });
     return triggered;
   }
 
   /** Native scrolling releases this input round, not the committed reveal. */
   leaveBoundary(): void {
+    this.diagnostic("leave-before");
     this.dragging = false;
     this.wheelLatched = false;
     if (this.reducedMotion() && this.phase !== "held") {
@@ -93,6 +106,7 @@ export class ThreadHistorySpring {
   }
 
   reset(): void {
+    this.diagnostic("reset");
     this.stopAnimation();
     this.dragging = false;
     this.travel = 0;
@@ -102,6 +116,7 @@ export class ThreadHistorySpring {
   }
 
   private readonly publish = (distance: number): void => {
+    this.diagnostic("publish", { distance });
     const bounded = Math.max(0, Math.min(HISTORY_PULL_LIMIT_PX, distance));
     this.options.onUpdate(this.phase !== "held" && this.reducedMotion() ? 0 : bounded);
   };
@@ -121,6 +136,7 @@ export class ThreadHistorySpring {
   }
 
   private stopAnimation(): void {
+    this.diagnostic("stop-animation");
     this.animationGeneration++;
     this.animation?.stop();
     this.animation = null;
@@ -128,6 +144,7 @@ export class ThreadHistorySpring {
   }
 
   private animateTo(target: number): void {
+    this.diagnostic("animate-before", { target });
     if (this.dragging) return;
     const next = Math.max(0, Math.min(HISTORY_PULL_LIMIT_PX, target));
     if (this.destination === next && this.animation) return;
@@ -151,9 +168,11 @@ export class ThreadHistorySpring {
       mass: 1,
       onComplete: () => this.finish(next, generation),
     });
+    this.diagnostic("animate-created", { target: next, generation });
   }
 
   private finish(destination: number, generation: number): void {
+    this.diagnostic("finish", { target: destination, finishGeneration: generation });
     if (generation !== this.animationGeneration) return;
     this.animation = null;
     this.destination = null;

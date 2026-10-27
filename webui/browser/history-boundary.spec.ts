@@ -1,4 +1,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
+import { installCiDiagnostics, saveCiDiagnostics } from "./ci-diagnostics";
+
+test.use({ trace: "retain-on-failure" });
 
 function historyPage(start: number, count = 12, more = start > 0) {
   return { schemaVersion: 3, projection: "events", events: Array.from({ length: Math.min(count, 52 - start) }, (_, offset) => [
@@ -345,15 +348,21 @@ test("archived task results stay with the retained boundary when earlier message
 test("touch reveals a static partial ready header, arms only on release, and retains a stable full loading header", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, baseURL });
   const page = await context.newPage();
+  await installCiDiagnostics(page);
   const history = await installHistory(page);
   try {
     const { body, header } = await openSettledHistory(page);
     await positionAtTop(body);
     await expect(header).not.toBeInViewport();
     const cdp = await context.newCDPSession(page);
-    const touch = async (type: "touchStart" | "touchMove" | "touchEnd", y = 200, x = 180) => cdp.send("Input.dispatchTouchEvent", {
-      type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
-    });
+    const touch = async (type: "touchStart" | "touchMove" | "touchEnd", y = 200, x = 180) => {
+      console.log("NAN374_CDP", JSON.stringify({ stage: "send", type, x, y, wallTime: Date.now() }));
+      const result = await cdp.send("Input.dispatchTouchEvent", {
+        type, touchPoints: type === "touchEnd" ? [] : [{ x, y, id: 1 }],
+      });
+      console.log("NAN374_CDP", JSON.stringify({ stage: "done", type, x, y, wallTime: Date.now() }));
+      return result;
+    };
     await touch("touchStart");
     // Leftward tests horizontal intent without Chromium's native swipe-back gesture.
     await touch("touchMove", 210, 60);
@@ -372,7 +381,9 @@ test("touch reveals a static partial ready header, arms only on release, and ret
     await expect(header).toHaveAttribute("data-state", "ready");
     await expect(header.locator(".thread-history-blocks > span").first()).toHaveCSS("animation-name", "none");
     expect(history.reads).toHaveLength(0);
+    console.log("NAN374_SCREENSHOT", JSON.stringify({ stage: "start", wallTime: Date.now() }));
     await page.screenshot({ path: test.info().outputPath("history-touch-partial-ready.png") });
+    console.log("NAN374_SCREENSHOT", JSON.stringify({ stage: "done", wallTime: Date.now() }));
     await touch("touchEnd");
     await expect.poll(() => displacement(body)).toBe(0);
     await expect(header).not.toBeInViewport();
@@ -418,6 +429,10 @@ test("touch reveals a static partial ready header, arms only on release, and ret
     history.complete();
     await page.waitForTimeout(100);
     await expect(page.locator('.thread-history-status[data-state="loading"]')).toHaveCount(0);
+    await saveCiDiagnostics(page, test.info(), "touch-history-pass");
+  } catch (error) {
+    await saveCiDiagnostics(page, test.info(), "touch-history-failure");
+    throw error;
   } finally { await context.close(); }
 });
 

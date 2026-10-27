@@ -903,7 +903,10 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
 
     const onScroll = (allowHistoryLoad = true) => {
       setAtHistoryTop(el.scrollTop <= 1);
-      if (el.scrollTop > 1) historySpringRef.current?.leaveBoundary();
+      if (el.scrollTop > 1) {
+        (window as Window & { __ciDiagnostic?: (record: Record<string, unknown>) => void }).__ciDiagnostic?.({ source: "viewport", type: "leave-boundary", scrollTop: el.scrollTop, gesture: historyTouchRef.current ? { ...historyTouchRef.current } : null, distance: historyDistanceRef.current });
+        historySpringRef.current?.leaveBoundary();
+      }
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const near = distance < NEAR_BOTTOM_PX;
       // A detached history page's bottom is not the live tail.
@@ -931,6 +934,10 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
       && !pendingConversationScrollRef.current;
     const canLoadAtTop = () => atHistoryBoundary() && !loadingOlder && !navigation?.loading
       && (hiddenMessageCount > 0 || hasMoreBefore);
+    const diagnostic = (type: string, extra: Record<string, unknown> = {}) => {
+      const emit = (window as Window & { __ciDiagnostic?: (record: Record<string, unknown>) => void }).__ciDiagnostic;
+      emit?.({ source: "viewport", type, scrollTop: el.scrollTop, connected: el.isConnected, conversationReady, pending: pendingConversationScrollRef.current, hiddenMessageCount, loadingOlder, hasMoreBefore, distance: historyDistanceRef.current, gesture: historyTouchRef.current ? { ...historyTouchRef.current } : null, atBoundary: atHistoryBoundary(), ...extra });
+    };
     const handleDirectionalInput = (
       direction: ThreadScrollDirection | null,
     ) => {
@@ -991,10 +998,12 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
       }
     };
     const handleTouchCancel = () => {
+      diagnostic("touchcancel");
       historyTouchRef.current = null;
       historySpringRef.current?.endTouch(true);
     };
     const handleTouchStart = (event: TouchEvent) => {
+      diagnostic("touchstart", { touches: event.touches.length, prevented: event.defaultPrevented, x: event.touches[0]?.clientX, y: event.touches[0]?.clientY });
       historyInputRef.current = "touch";
       const touch = event.touches[0];
       historyTouchRef.current = event.touches.length === 1 && touch
@@ -1008,6 +1017,7 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
         : null;
     };
     const handleTouchMove = (event: TouchEvent) => {
+      diagnostic("touchmove-before", { touches: event.touches.length, prevented: event.defaultPrevented, cancelable: event.cancelable, x: event.touches[0]?.clientX, y: event.touches[0]?.clientY });
       const gesture = historyTouchRef.current;
       const touch = event.touches[0];
       if (event.touches.length !== 1) {
@@ -1030,15 +1040,19 @@ export const ThreadViewport = forwardRef<ThreadViewportHandle, ThreadViewportPro
         if (event.cancelable) event.preventDefault();
         yieldCameraToUser();
         historySpringRef.current?.moveTouch(-delta);
+        diagnostic("touchmove-pull", { delta, prevented: event.defaultPrevented });
         setAtHistoryTop(true);
         return;
       }
       handleDirectionalInput(directionFromDelta(delta));
     };
     const handleTouchEnd = () => {
+      diagnostic("touchend");
       const pulling = historyTouchRef.current?.pulling;
       historyTouchRef.current = null;
-      if (historySpringRef.current?.endTouch() && pulling && canLoadAtTop()) loadEarlierMessages();
+      const triggered = historySpringRef.current?.endTouch();
+      diagnostic("touchend-result", { pulling, triggered, canLoad: canLoadAtTop() });
+      if (triggered && pulling && canLoadAtTop()) loadEarlierMessages();
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (
