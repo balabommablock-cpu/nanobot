@@ -1420,3 +1420,35 @@ def test_terminate_posix_tolerates_process_group_disappearing_before_sigkill(
     monkeypatch.setattr(runtime, "_wait_for_exit", lambda *_args: next(waits))
 
     assert runtime._terminate_posix(1234, timeout_s=1) is True
+
+
+def test_client_lease_reads_and_replaces_with_windows_safe_helpers(tmp_path, monkeypatch):
+    """#6514: a reader holding the lease open must not make the next write fail on Windows."""
+    from nanobot.gateway import runtime as runtime_module
+
+    calls: list[str] = []
+    real_read = runtime_module.read_atomic_bytes
+    real_replace = runtime_module.replace_atomic
+
+    def read(path, **kwargs):
+        calls.append("read")
+        return real_read(path, **kwargs)
+
+    def replace(source, destination):
+        calls.append("replace")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(runtime_module, "read_atomic_bytes", read)
+    monkeypatch.setattr(runtime_module, "replace_atomic", replace)
+    runtime = GatewayRuntime(paths=_paths(tmp_path), platform_name="Linux")
+    monkeypatch.setattr(runtime, "_process_identity", lambda pid: pid)
+    monkeypatch.setattr(runtime, "_is_pid_running", lambda _pid: True)
+    client = GatewayClientLease(runtime, kind="tui", pid=os.getpid(), token="tui")
+
+    client.acquire()
+
+    assert "read" in calls
+    assert "replace" in calls
+    state = json.loads(client.state_path.read_text(encoding="utf-8"))
+    assert "tui" in state["clients"]
+    assert not list(client.state_path.parent.glob("*.tmp"))
