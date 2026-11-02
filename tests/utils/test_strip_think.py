@@ -63,6 +63,29 @@ class TestStripThinkFalsePositive:
         text = 'Example:\n```\ntext = re.sub(r"<think>[\\s\\S]*", "", text)\n```\nDone.'
         assert strip_think(text) == text
 
+    def test_closed_think_pair_in_code_fence_preserved(self):
+        text = "Example XML:\n```xml\n<think>keep this literal example</think>\n```"
+        assert strip_think(text) == text
+
+    def test_tilde_fence_and_malformed_tag_preserved(self):
+        text = "Try:\n~~~\n<thought>a</thought> and <think attr\n~~~\nok"
+        assert strip_think(text) == text
+
+    def test_reasoning_outside_fence_still_stripped(self):
+        text = "<think>plan</think>Here:\n```xml\n<think>x</think>\n```"
+        assert strip_think(text) == "Here:\n```xml\n<think>x</think>\n```"
+
+    def test_fenced_code_inside_reasoning_still_stripped(self):
+        text = "<think>\n```py\nprint(1)\n```\n</think>Answer"
+        assert strip_think(text) == "Answer"
+
+    def test_fence_opened_inside_reasoning_does_not_hide_its_end(self):
+        text = "<think>\n```\nnotes\n</think>\nAnswer\n```py\nx = 1\n```"
+        assert strip_think(text) == "Answer\n```py\nx = 1\n```"
+
+    def test_unclosed_fence_is_not_protected(self):
+        assert strip_think("```\n<think>x</think>") == "```"
+
     def test_backtick_thought_tag_preserved(self):
         text = "Gemma 4 uses `<thought>` blocks for reasoning."
         assert strip_think(text) == text

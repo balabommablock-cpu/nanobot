@@ -168,9 +168,38 @@ _THINKING_TAG_PREFIX = "|".join(
     )
 )
 _PARTIAL_THINKING_TAG = rf"</?(?:{_THINKING_TAG_PREFIX})>?"
+# A closed ``` or ~~~ fence: same fence char, closing run at least as long.
+_CLOSED_CODE_FENCE = re.compile(
+    r"^[ \t]{0,3}(?P<fence>`{3,}|~{3,})[^\n]*\n[\s\S]*?^[ \t]{0,3}(?P=fence)[`~]*[ \t]*$",
+    re.MULTILINE,
+)
 
 
 def strip_think(text: str) -> str:
+    """Strip reasoning (see `_strip_think_tags`) but keep closed Markdown code
+    fences as written: a `<think>...</think>` inside one is a literal example."""
+    if "<" not in text:
+        return text.strip()
+    fences: list[str] = []
+
+    def _hold_fence(match: re.Match[str]) -> str:
+        block = match.group(0)
+        # More closing than opening tags means the "fence" started inside a
+        # reasoning block that ends in it; leave it for normal stripping.
+        if len(re.findall(rf"</{_THINKING_TAG}>", block)) > len(
+            re.findall(rf"<{_THINKING_TAG}>", block)
+        ):
+            return block
+        fences.append(block)
+        return f"\x00{len(fences) - 1}\x00"
+
+    text = _strip_think_tags(_CLOSED_CODE_FENCE.sub(_hold_fence, text))
+    if fences:
+        text = re.sub(r"\x00(\d+)\x00", lambda m: fences[int(m.group(1))], text)
+    return text
+
+
+def _strip_think_tags(text: str) -> str:
     """Remove thinking blocks, unclosed trailing tags, and tokenizer-level
     template leaks occasionally emitted by some models (notably Gemma 4's
     Ollama renderer).
